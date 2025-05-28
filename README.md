@@ -10,7 +10,7 @@
 > 
 > **Always review your code before committing to ensure no sensitive data is included.**
 
-This is a public repository maintained by Keyture to host and manage organization-owned code snippets, scripts, and gists that are shared across teams and projects.
+This is a public repository to host and manage organization-owned code snippets, scripts, and gists that are shared across teams and projects.
 
 ## 📋 Overview
 
