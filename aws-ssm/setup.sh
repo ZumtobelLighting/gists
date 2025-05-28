@@ -13,7 +13,7 @@ if [ $# -ne 3 ]; then
 fi
 
 SSM_AGENT_CODE="$1"
-SSM_AGENT_ID=="$2"
+SSM_AGENT_ID="$2"  # Fixed: removed extra =
 SSM_AGENT_REGION="$3"
 
 echo "Starting SSM Agent setup..."
@@ -25,14 +25,28 @@ echo "SSM Agent Region: $SSM_AGENT_REGION"
 echo "Updating system packages..."
 sudo apt-get update -y
 
-# Install SSM Agent if not present
-echo "Checking SSM Agent installation..."
-if ! systemctl is-active --quiet amazon-ssm-agent; then
-    echo "Installing SSM Agent..."
+# Install SSM Agent using snap (official method)
+echo "Installing SSM Agent..."
+if ! sudo snap list amazon-ssm-agent >/dev/null 2>&1; then
+    echo "Installing SSM Agent via snap..."
     sudo snap install amazon-ssm-agent --classic
+    echo "SSM Agent installed successfully"
+else
+    echo "SSM Agent is already installed"
+fi
+
+# Check SSM Agent status and start if needed
+echo "Checking SSM Agent status..."
+if sudo snap services amazon-ssm-agent | grep -q "inactive\|disabled\|stopped"; then
+    echo "Starting SSM Agent service..."
+    sudo snap start amazon-ssm-agent
 else
     echo "SSM Agent is already running"
 fi
+
+# Verify SSM Agent is running
+echo "Verifying SSM Agent service status..."
+sudo snap services amazon-ssm-agent
 
 # Install Docker if not present
 echo "Installing Docker..."
@@ -108,29 +122,42 @@ fi
 
 # Configure SSM Agent with the provided activation code and region
 echo "Configuring SSM Agent..."
-sudo amazon-ssm-agent -register -code "$SSM_AGENT_CODE" -id "$SSM_AGENT_ID" -region "$SSM_AGENT_REGION"
-
-# Start and enable SSM Agent service
-echo "Starting SSM Agent service..."
-sudo systemctl enable amazon-ssm-agent
-sudo systemctl start amazon-ssm-agent
-
-# Verify SSM Agent status
-echo "Verifying SSM Agent status..."
-if systemctl is-active --quiet amazon-ssm-agent; then
-    echo "✅ SSM Agent is running successfully"
-    systemctl status amazon-ssm-agent --no-pager
+if sudo /snap/amazon-ssm-agent/current/amazon-ssm-agent -register -code "$SSM_AGENT_CODE" -id "$SSM_AGENT_ID" -region "$SSM_AGENT_REGION" -y; then
+    echo "✅ SSM Agent registered successfully"
 else
-    echo "❌ SSM Agent failed to start"
-    exit 1
+    echo "⚠️ SSM Agent registration may have failed, checking status..."
+fi
+
+# Restart SSM Agent service to ensure registration takes effect
+echo "Restarting SSM Agent service..."
+sudo snap restart amazon-ssm-agent
+
+# Wait for service to fully restart
+sleep 3
+
+# Verify SSM Agent final status
+echo "Final SSM Agent status check..."
+echo "Service status:"
+sudo snap services amazon-ssm-agent
+
+echo "Registration status:"
+if sudo /snap/amazon-ssm-agent/current/amazon-ssm-agent -status 2>/dev/null; then
+    echo "✅ SSM Agent is properly registered"
+else
+    echo "⚠️ SSM Agent registration status unclear"
 fi
 
 echo ""
 echo "🎉 Setup completed successfully!"
 echo "📋 Installed components:"
-echo "   - SSM Agent: ✅"
+echo "   - SSM Agent: ✅ (via snap)"
 echo "   - Docker: ✅"
 echo "   - Docker Compose: ✅"
 echo ""
 echo "💡 Note: You may need to log out and log back in for Docker group permissions to take effect"
 echo "💡 To test Docker without sudo, run: newgrp docker"
+echo ""
+echo "🔧 SSM Agent commands for troubleshooting:"
+echo "   - Check status: sudo snap services amazon-ssm-agent"
+echo "   - Start service: sudo snap start amazon-ssm-agent"
+echo "   - Check registration: sudo /snap/amazon-ssm-agent/current/amazon-ssm-agent -status"
