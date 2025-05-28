@@ -2,24 +2,44 @@
 
 # Supports: Ubuntu/Debian systems only
 
+#!/bin/bash
+
+# Supports: Ubuntu/Debian systems only
+
 set -e
 
 # Check if required parameters are provided
-if [ $# -ne 3 ]; then
-    echo "Usage: $0 <ssm_agent_code> <ssm_agent_id> <ssm_agent_region>"
+if [ $# -lt 3 ] || [ $# -gt 4 ]; then
+    echo "Usage: $0 <ssm_agent_code> <ssm_agent_id> <ssm_agent_region> [tags]"
     echo "Please provide the SSM Agent activation code, ID, and region."
-    echo "Example: $0 asasasa jsjsjs-xxxx-yyyy-asasa-asss eu-central-1"
+    echo "Tags are optional and should be in format: 'Key1=Value1,Key2=Value2'"
+    echo ""
+    echo "Examples:"
+    echo "  $0 asasasa jsjsjs-xxxx-yyyy-asasa-asss eu-central-1"
+    echo "  $0 asasasa jsjsjs-xxxx-yyyy-asasa-asss eu-central-1 'Scope=Hytronik-OnPrem,Type=OnPrem-Gateway'"
     exit 1
 fi
 
 SSM_AGENT_CODE="$1"
-SSM_AGENT_ID="$2"  # Fixed: removed extra =
+SSM_AGENT_ID="$2"
 SSM_AGENT_REGION="$3"
+CUSTOM_TAGS="$4"
+
+# Default tags - always applied
+DEFAULT_TAGS="CreatedBy=SSMSetupScript,CreatedDate=$(date +%Y-%m-%d),Hostname=$(hostname)"
+
+# Combine default tags with custom tags if provided
+if [ -n "$CUSTOM_TAGS" ]; then
+    FINAL_TAGS="${DEFAULT_TAGS},${CUSTOM_TAGS}"
+else
+    FINAL_TAGS="$DEFAULT_TAGS"
+fi
 
 echo "Starting SSM Agent setup..."
 echo "SSM Agent Code: $SSM_AGENT_CODE"
 echo "SSM Agent ID: $SSM_AGENT_ID"
 echo "SSM Agent Region: $SSM_AGENT_REGION"
+echo "Tags to apply: $FINAL_TAGS"
 
 # Update system packages
 echo "Updating system packages..."
@@ -120,12 +140,29 @@ else
     echo "❌ Docker Compose installation failed"
 fi
 
-# Configure SSM Agent with the provided activation code and region
-echo "Configuring SSM Agent..."
-if sudo /snap/amazon-ssm-agent/current/amazon-ssm-agent -register -code "$SSM_AGENT_CODE" -id "$SSM_AGENT_ID" -region "$SSM_AGENT_REGION" -y; then
-    echo "✅ SSM Agent registered successfully"
+# Configure SSM Agent with the provided activation code, region, and tags
+echo "Configuring SSM Agent with tags..."
+if sudo /snap/amazon-ssm-agent/current/amazon-ssm-agent -register \
+    -code "$SSM_AGENT_CODE" \
+    -id "$SSM_AGENT_ID" \
+    -region "$SSM_AGENT_REGION" \
+    -tags "$FINAL_TAGS" \
+    -y; then
+    echo "✅ SSM Agent registered successfully with tags"
 else
     echo "⚠️ SSM Agent registration may have failed, checking status..."
+    
+    # Try alternative registration without -y flag
+    echo "Attempting registration with manual confirmation..."
+    if echo "Yes" | sudo /snap/amazon-ssm-agent/current/amazon-ssm-agent -register \
+        -code "$SSM_AGENT_CODE" \
+        -id "$SSM_AGENT_ID" \
+        -region "$SSM_AGENT_REGION" \
+        -tags "$FINAL_TAGS"; then
+        echo "✅ SSM Agent registered successfully with alternative method"
+    else
+        echo "❌ SSM Agent registration failed"
+    fi
 fi
 
 # Restart SSM Agent service to ensure registration takes effect
@@ -139,13 +176,6 @@ sleep 3
 echo "Final SSM Agent status check..."
 echo "Service status:"
 sudo snap services amazon-ssm-agent
-
-echo "Registration status:"
-if sudo /snap/amazon-ssm-agent/current/amazon-ssm-agent -status 2>/dev/null; then
-    echo "✅ SSM Agent is properly registered"
-else
-    echo "⚠️ SSM Agent registration status unclear"
-fi
 
 echo ""
 echo "🎉 Setup completed successfully!"
